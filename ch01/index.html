@@ -1,0 +1,529 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Algorithms: sequence, branching, repetition</title>
+<link rel="stylesheet" href="../lib/engine.css">
+<link rel="expect" href="#bar" blocking="render"><!-- hold the first frame until the player exists, so the page transition can run -->
+</head>
+<body>
+<script src="../lib/engine.js"></script>
+<script src="../lib/prog.js"></script>
+<script src="audio/en/timings.js"></script>
+<script>
+'use strict';
+// Глава 1, озвученная английская версия (только теория). Текст: content/programming-en/ch01/text.md,
+// озвучка с метками: content/programming-en/ch01/narration.en.json (идентификаторы битов совпадают).
+const CHAPTER = { number: 1, title: 'Algorithms: sequence, branching, repetition', language: 'en' };
+
+/* ---------- помощники главы ---------- */
+const txt = (p, str, x, y, t0, { size = 40, fill = COL.chalk, anchor = 'start', weight = 600 } = {}) => { const e = T(p, str, { x, y, size, fill, anchor, weight, o: 0 }); show(e, t0); return e; };
+const cnt = (p, x, y, pre, { size = 56, fill = PC.data, anchor = 'start' } = {}) => {            // счётчик с текстом «pre N»
+  const e = T(p, pre + '0', { x, y, size, fill, weight: 700, anchor, o: 0 });
+  return { e, set: (n, t) => prog(() => { e.textContent = pre + n; }, t, 0, lin) };
+};
+const nd = (p, t, ...a) => { const n = pgNode(p, ...a); show(n.g, t, .35); return n; };
+const MAZE = {};
+</script>
+<script>
+// Поля. Строки: . пусто, # камень, > v < ^ старт робота и его направление, F флажок, $ монета. Первая строка — верхний ряд.
+MAZE.seq = pgMaze(['......', '.#F...', '......', '>.....']);   // B3 — камень, флажок на C3: в `order` робот упирается в него
+MAZE.open = pgMaze(['......', '......', '......', '>.....']);
+MAZE.exec = pgMaze(['.....F', '......', '......', '>.....']);
+MAZE.rep = pgMaze(['.........', '>.......F']);
+MAZE.sq = pgMaze(['>..', '...', '...']);
+MAZE.rq = pgMaze(['......', '......', '......', '.>....']);
+MAZE.corr = pgMaze(['..>....']);
+MAZE.room = pgMaze(['...', '.>.', '...']);
+MAZE.coins = pgMaze(['>$.$$.$']);
+MAZE.bq = pgMaze(['.....', '..>#.', '.....']);
+MAZE.combo = pgMaze(['>.....', '#####.', '##F##.', '##....']);
+MAZE.fail = pgMaze(['>....', '..F..', '.....']);
+const PROG = {
+  seq: pgId(pgProg('FFLFF')), order: pgId(pgProg('FLFFF')), q: pgId(pgProg('FFLFLF')),
+  sq: () => pgId([{ t: 'rep', n: 4, body: pgProg('FFR') }]),
+  rq: () => pgId([{ t: 'rep', n: 3, body: pgProg('FFL') }]),
+  combo: () => pgId([{ t: 'until', c: 'flag', body: [{ t: 'if', c: 'free', then: [{ t: 'F' }], else: [{ t: 'R' }] }] }]),
+};
+const rowsOf = prog => prog.map(n => ({ txt: PG_CMD[n.t], color: PC.cmd }));
+PG_COND.rain = 'raining'; PG_CMD.U = 'take umbrella';
+const PLAN = [
+  { n: '1', t: 'What is an algorithm' }, { n: '2', t: 'Sequence' }, { n: '3', t: 'Visual programming' },
+  { n: '4', t: 'Loops' }, { n: '5', t: 'Conditions' }, { n: '6', t: 'All together' }, { n: '7', t: 'Summary' }];
+const partBeat = (id, title, hi) => [id, title, () => { pgAgenda(panel(0), PLAN, { hi, t0: .2 }); }];
+const LIST = { x: 960, y: 170, w: 560 };
+const fieldAt = (p, m, o = {}) => pgField(p, m, { x: 70, y: 170, cell: 135, coords: true, ...o });
+// Строка правила-цепочки (шкала оценок): плашка с текстом, подсветка рамкой.
+const ruleRow = (p, s, x, y, w, col, o = 0) => {
+  const g = G(p, { x, y, o }), hl = G(g, { o: 0 });
+  mk('rect', { width: w, height: 84, rx: 16, fill: PC.card, stroke: col, 'stroke-width': 5 }, g);
+  mk('rect', { x: -8, y: -8, width: w + 16, height: 100, rx: 22, fill: 'none', stroke: COL.chalk, 'stroke-width': 7 }, hl);
+  T(g, s, { x: 30, y: 58, size: 44, weight: 700, fill: COL.chalk });
+  return { g, hl };
+};
+
+/* ---------- биты ---------- */
+const BEATS = [
+  /* ===== Part 1. What is an algorithm ===== */
+  ['intro', 'Title', (m) => {
+    const p = panel(0), g = G(p, { o: 0, y: 24 });
+    T(g, 'Week 1 · Lesson 1', { x: 100, y: 230, size: 46, fill: COL.dim });
+    T(g, 'Algorithms', { x: 100, y: 380, size: 150, weight: 800 });
+    tw(g, { o: 1, y: 0 }, .2, 1.1, out);
+    [['sequence', PC.cmd, 'seq'], ['branching', PC.cond, 'branch'], ['repetition', PC.loop, 'rep']].forEach(([s, c, mark], i) => {
+      const b = pgPill(p, s, 1270, 560 + i * 115 + 30, c, PC.ink, { size: 46, h: 92, pad: 36 });
+      tw(b, { o: 1, y: 560 + i * 115 }, m(mark), .5, out);
+    });
+  }],
+  ['agenda', 'Lesson plan', (m) => {
+    const p = panel(0), A = pgAgenda(p, PLAN, { hi: -1, t0: m('parts'), stagger: .09 });
+    A.light(0, m('parts') + .9);
+  }],
+  ['everyday', 'Everyday instructions', (m) => {
+    const p = panel(0);
+    txt(p, 'Step-by-step instructions', 800, 110, .2, { size: 60, weight: 800, anchor: 'middle' });
+    const cols = [
+      ['lab', 'Lab method', ['1. Measure the reagent', '2. Mix with the sample', '3. Write down the result'], g => {
+        mk('path', { d: 'M-30 25L-72 62Q-80 78 -62 78H62Q80 78 72 62L30 25Z', fill: PC.cmd }, g);
+        path(g, 'M-30 -75V25L-72 62Q-80 78 -62 78H62Q80 78 72 62L30 25V-75M-48 -75H48', { stroke: COL.chalk, 'stroke-width': 8 });
+      }],
+      ['route', 'Route', ['1. Walk to the bus stop', '2. Take bus number 5', '3. Get off at stop 3'], g => {
+        path(g, 'M-90 60Q-30 -20 20 30T90 -40', { stroke: COL.chalk, 'stroke-width': 8, 'stroke-dasharray': '4 18' });
+        mk('circle', { cx: 90, cy: -50, r: 24, fill: PC.cmd }, g);
+        mk('circle', { cx: -90, cy: 60, r: 14, fill: COL.chalk }, g);
+      }],
+      ['atm', 'Cash machine', ['1. Insert the card', '2. Enter the PIN', '3. Choose the amount', '4. Take card and cash'], g => {
+        mk('rect', { x: -70, y: -70, width: 140, height: 100, rx: 12, fill: 'none', stroke: COL.chalk, 'stroke-width': 8 }, g);
+        path(g, 'M-40 62H40', { stroke: COL.chalk, 'stroke-width': 10 });
+        mk('rect', { x: -26, y: 44, width: 52, height: 34, rx: 6, fill: PC.cmd }, g);
+      }]];
+    cols.forEach(([mark, name, steps, icon], i) => {
+      const cx = 290 + i * 510, g = G(p, { x: cx, y: 270 + 24, o: 0 });
+      icon(g);
+      const nm = T(p, name, { x: cx, y: 450, size: 56, weight: 700, anchor: 'middle', o: 0 });
+      tw(g, { o: 1, y: 270 }, m(mark), .5, out); show(nm, m(mark) + .1);
+      steps.forEach((s, k) => txt(p, s, cx - 215, 540 + k * 70, m(mark) + .3 + k * .22, { size: 40, weight: 500 }));
+    });
+  }],
+  ['define', 'What an algorithm is', (m) => {
+    const p = panel(0);
+    txt(p, 'A recipe for tea', 120, 120, .2, { size: 64, weight: 700 });
+    const steps = ['1. Boil the water', '2. Put a tea bag in a cup', '3. Pour in the boiling water', '4. Wait 3 minutes', '5. Add sugar to taste'];
+    steps.forEach((s, i) => txt(p, s, 120, 235 + i * 78, m('steps') + i * .4, { size: 48 }));
+    const x5 = 120 + uiW('5. Add ', 48), w5 = uiW('sugar to taste', 48);
+    const fr = G(p, { o: 0 }); mk('rect', { x: x5 - 6, y: 235 + 4 * 78 - 58, width: w5 + 24, height: 84, rx: 14, fill: 'none', stroke: COL.bad, 'stroke-width': 7 }, fr);
+    show(fr, m('vague'));
+    const q = pgPill(p, 'how many spoons?', 1210, 235 + 4 * 78 - 12, COL.bad, PC.ink, { size: 44, h: 76 }); show(q, m('vague') + .4);
+    const def = G(p, { o: 0, y: 20 });
+    mk('rect', { x: 100, y: 640, width: 1400, height: 170, rx: 24, fill: PC.card, stroke: COL.chalk, 'stroke-width': 5 }, def);
+    T(def, 'An algorithm is a precise, step-by-step procedure', { x: 800, y: 715, size: 48, weight: 700, anchor: 'middle' });
+    T(def, 'for solving a problem or completing a task.', { x: 800, y: 780, size: 48, weight: 700, anchor: 'middle' });
+    tw(def, { o: 1, y: 0 }, m('def'), .6, out);
+  }],
+  ['word', 'Where the word comes from', (m) => {
+    const p = panel(0);
+    txt(p, 'al-Khwarizmi', 800, 250, .2, { size: 96, weight: 800, anchor: 'middle' });
+    txt(p, 'Baghdad, 9th century', 800, 330, .5, { size: 46, fill: COL.dim, anchor: 'middle' });
+    const digits = '0123456789'.split('');
+    digits.forEach((d, i) => { const e = T(p, d, { x: 800 + (i - 4.5) * 90, y: 520, size: 80, weight: 700, fill: PC.data, anchor: 'middle', o: 0 }); tw(e, { o: 1 }, m('book') + .3 + i * .08, .3); });
+    txt(p, 'a book on calculating with the digits 0 to 9', 800, 600, m('book') + 1.2, { size: 42, fill: COL.dim, anchor: 'middle' });
+    const chain = [['al-Khwarizmi', COL.chalk], ['Algoritmi', PC.cond], ['algorithm', PC.cmd]];
+    const pills = chain.map(([s, c], i) => { const b = pgPill(p, s, 330 + i * 470, 760, PC.card, c, { size: 48, h: 92, pad: 34 }); tw(b, { o: 1 }, m('latin') + i * .7, .4); return b; });
+    pills.slice(1).forEach((b, i) => { const a = pills[i]; pgArrow(p, [[st(a).x + a._w / 2 + 14, 760], [st(b).x - b._w / 2 - 14, 760]]).show(m('latin') + (i + 1) * .7 - .3, .3); });
+  }],
+  ['props', 'Properties of an algorithm', (m) => {
+    const p = panel(0);
+    txt(p, 'Properties of an algorithm', 800, 95, .2, { size: 56, weight: 800, anchor: 'middle' });
+    [['exact', 'Precision', ['each step has', 'one meaning']], ['finite', 'Finiteness', ['it stops and', 'gives an answer']],
+      ['mass', 'Generality', ['it solves a whole', 'class of problems']]].forEach(([mk_, name, ls], i) => {
+      const x = 60 + i * 510, y = 200, g = G(p, { x, y: y + 20, o: 0 });
+      mk('rect', { width: 480, height: 420, rx: 26, fill: PC.card, stroke: PC.edge, 'stroke-width': 5 }, g);
+      T(g, name, { x: 240, y: 130, size: 56, weight: 700, anchor: 'middle' });
+      ls.forEach((s, k) => T(g, s, { x: 240, y: 280 + k * 56, size: 40, fill: COL.dim, anchor: 'middle' }));
+      tw(g, { o: 1, y }, m(mk_), .5, out);
+    });
+    txt(p, 'a web server runs for months by repeating', 800, 730, m('server'), { size: 40, fill: PC.cond, anchor: 'middle' });
+    txt(p, 'a task that finishes each time', 800, 785, m('server') + .2, { size: 40, fill: PC.cond, anchor: 'middle' });
+  }],
+  ['props-q', 'Question: which property?', (m) => {
+    const p = panel(0);
+    txt(p, 'Which property is broken?', 100, 120, .2, { size: 56, weight: 700, fill: COL.dim });
+    [['“Stir for a while”', 'Precision'], ['“Repeat: take a step forward”', 'Finiteness'], ['“Add 12 and 7: the answer is 19”', 'Generality']].forEach(([s, a], i) => {
+      const y = 260 + i * 190;
+      mk('rect', { x: 100, y: y - 70, width: 1400, height: 150, rx: 24, fill: PC.card, stroke: PC.edge, 'stroke-width': 4 }, p);
+      txt(p, s, 140, y + 18, .3 + i * .2, { size: 46 });
+      const tag = pgPill(p, a, 1280, y + 5, COL.bad, PC.ink, { size: 44, h: 80 }); put(tag, { x: 1460 - tag._w / 2 });
+      tw(tag, { o: 1 }, m(['answer', 'a2', 'a3'][i]), .4);
+    });
+  }],
+  ['executor', 'The executor and its commands', (m) => {
+    const p = panel(0), F = pgField(p, MAZE.exec, { x: 70, y: 180 });
+    ['forward', 'turn left', 'turn right'].forEach((s, i) => {
+      const c = pgRect(p, 960, 170 + i * 90, 520, 72, PC.cmd, { o: 0 });
+      T(c, s, { x: 260, y: 52, size: 44, fill: PC.ink, weight: 700, anchor: 'middle' });
+      tw(c, { o: 1 }, m('cmds') + i * .6, .4);
+    });
+    const ask = pgPill(p, 'is the path ahead clear?', 1220, 560, PC.cond, PC.ink, { size: 40, h: 76 }); show(ask, m('ask'));
+    const b = pgPill(p, 'go to the flag?', 1150, 670, '#3a5047', COL.chalk, { size: 44, h: 80, pad: 34 });
+    tw(b, { o: 1 }, m('only'), .4);
+    const x = pgCheckMark(p, 1150 + b._w / 2 + 56, 670, false, { r: 1.7 }); draw(x, m('only') + 1.2, .4);
+    const br = path(p, 'M930 170V422', { stroke: PC.cmd, 'stroke-width': 9 }, { d: 0 }); draw(br, m('ski'), .5);
+    txt(p, 'the command set', 1220, 475, m('ski'), { size: 42, weight: 700, fill: PC.cmd, anchor: 'middle' });
+    txt(p, 'a computer is an executor too;', 1200, 790, m('computer'), { size: 40, fill: COL.dim, anchor: 'middle' });
+    txt(p, 'a program: instructions in its language', 1200, 845, m('computer') + 1.5, { size: 40, fill: COL.dim, anchor: 'middle' });
+  }],
+  ['forms', 'Ways to write it down', (m) => {
+    const p = panel(0);
+    txt(p, 'Algorithm: “if it is raining, take an umbrella”', 800, 100, .2, { size: 50, weight: 700, anchor: 'middle' });
+    const W = [320, 320, 320, 500], X = [40]; W.forEach((w, i) => i < 3 && X.push(X[i] + w + 20));
+    [['words', 'In words'], ['chart', 'Flowchart'], ['blocks', 'Blocks'], ['code', 'Python code']].forEach(([mk_, name, ], i) => {
+      const x = X[i], g = G(p, { x, y: 190 + 24, o: 0 });
+      mk('rect', { width: W[i], height: 580, rx: 24, fill: PC.card, stroke: PC.edge, 'stroke-width': 5 }, g);
+      T(g, name, { x: W[i] / 2, y: 70, size: 44, weight: 700, anchor: 'middle', fill: COL.dim });
+      if (i === 0) ['If it is', 'raining,', 'take an', 'umbrella.'].forEach((s, k) => T(g, s, { x: 28, y: 190 + k * 62, size: 46 }));
+      if (i === 1) {
+        const d = pgNode(g, 'dia', 'raining?', 150, 210, { w: 250, h: 130, o: 1 }), r = pgNode(g, 'rect', 'umbrella', 150, 370, { w: 250, h: 70, o: 1 }), e = pgNode(g, 'oval', 'next', 150, 500, { w: 170, h: 60, o: 1 });
+        [pgArrow(g, [d.bot, [150, 332]], { label: 'yes', lx: 40, ly: 30, o: 1 }), pgArrow(g, [r.bot, [150, 468]], { o: 1 }),
+          pgArrow(g, [d.right, [296, 210], [296, 500], [240, 500]], { label: 'no', lx: -18, ly: -22, o: 1 })].forEach(a => { draw(a.line, 0, 0); a.lab && (st(a.lab).o = 1, render(a.lab)); });
+      }
+      if (i === 2) pgBlocks(g, [{ t: 'if', c: 'rain', then: [{ t: 'U' }], id: 0 }].map(n => (n.then[0].id = 1, n)), { x: 14, y: 150, w: 292, size: 34, h: 66 });
+      if (i === 3) { T(g, 'if rain:', { x: 28, y: 190, size: 44, font: PG_MONO, fill: PC.cond, weight: 700 }); T(g, '    take_umbrella()', { x: 28, y: 260, size: 38, font: PG_MONO, fill: PC.cmd, weight: 700 }); }
+      tw(g, { o: 1, y: 190 }, m(mk_), .5, out);
+    });
+  }],
+
+  /* ===== Part 2. Sequence ===== */
+  partBeat('part2', 'Part 2. Sequence', 1),
+  ['sequence', 'A sequence', (m) => {
+    const p = panel(0), F = fieldAt(p, MAZE.seq), L = pgList(p, rowsOf(PROG.seq), { ...LIST, title: 'Program' });
+    const ev = pgExec(MAZE.seq, PROG.seq).evs, hook = (e, t) => e.t === 'act' && L.at(e.id, t, .15);
+    tw(L.ptr, { o: 1 }, m('f1') - .01, .01);
+    pgRun(F, ev, m('f1'), { per: .6, to: 2, on: hook });
+    pgRun(F, ev, m('l'), { per: .6, from: 2, to: 3, on: hook });
+    const end = pgRun(F, ev, m('f2'), { per: .6, from: 3, on: hook });
+    L.off(end + .1);
+    show(F.ring(2, 1), m('done')); pulse(F.flag, m('done') + .1, 1.4);
+  }],
+  ['trace', 'Tracing', (m) => {
+    const p = panel(0), F = fieldAt(p, MAZE.seq), r = pgExec(MAZE.seq, PROG.seq), mz = MAZE.seq;
+    const cols = [950, 1040, 1290, 1420], rowH = 70, y0 = 210;
+    ['step', 'command', 'cell', 'faces'].forEach((s, i) => txt(p, s, cols[i], y0, .3, { size: 38, fill: COL.dim, weight: 700 }));
+    mk('rect', { x: 935, y: y0 + 18, width: 620, height: 5, fill: PC.edge }, p);
+    const row = (k, cmd, x, y, d, t) => {
+      const g = G(p, { y: y0 + 20 + (k + 1) * rowH - 8, o: 0 });
+      [`${k}`, cmd, pgCell(mz, x, y), pgArrowCh(d)].forEach((s, i) => T(g, s, { x: cols[i], size: 44, weight: 600, fill: i === 1 ? (k ? PC.cmd : PC.meta) : COL.chalk }));
+      show(g, t, .25);
+    };
+    row(0, 'start', mz.start.x, mz.start.y, mz.start.d, .5);
+    const per = pgPer(5, m('rows'), m('rows') + 4.5, .55);
+    const acts = r.evs.filter(e => e.t === 'act');
+    pgRun(F, r.evs, m('rows'), { per, on: (e, t) => { const k = acts.indexOf(e) + 1; row(k, PG_CMD[e.c], e.x, e.y, e.d, t + per * .8); } });
+  }],
+  ['seq-q', 'Question: where will the robot end up?', (m) => {
+    const p = panel(0), F = fieldAt(p, MAZE.open), L = pgList(p, rowsOf(PROG.q), { ...LIST, title: 'Program' });
+    txt(p, 'Where will the robot end up', 960, 740, .4, { size: 44, weight: 700 }); txt(p, 'and which way will it face?', 960, 795, .4, { size: 44, weight: 700 });
+    const r = pgExec(MAZE.open, PROG.q), end = pgRun(F, r.evs, m('answer'), { per: 1.1, on: (e, t) => L.at(e.id, t, .12) });
+    L.off(end + .1);
+    show(F.ring(r.end.x, r.end.y), end);
+    txt(p, `Cell ${pgCell(MAZE.open, r.end.x, r.end.y)}, facing ${pgDirName(r.end.d)}`, 960, 860, end + .3, { size: 46, fill: PC.flag, weight: 700 });
+  }],
+  ['order', 'Order matters', (m) => {
+    const p = panel(0), F = fieldAt(p, MAZE.seq), L = pgList(p, rowsOf(PROG.order), { ...LIST, title: 'Program' });
+    const sw = path(p, 'M1555 345V415M1539 361L1555 341L1571 361M1539 399L1555 419L1571 399', { stroke: COL.chalk, 'stroke-width': 6 }, { o: 0 }); show(sw, .4);
+    const r = pgExec(MAZE.seq, PROG.order), ci = r.evs.findIndex(e => e.crash);
+    pgRun(F, r.evs, m('run'), { per: .9, to: ci, on: (e, t) => e.t === 'act' && L.at(e.id, t, .15) });
+    const t = m('wall');
+    pgRun(F, r.evs, t, { per: .7, from: ci, to: ci + 1, on: (e, tt) => { L.at(e.id, tt, .15); L.bad(e.id, tt + .3); } });
+    const cr = pgCheckMark(p, 70 + F.pos(1, 1)[0], 170 + F.pos(1, 1)[1], false, { r: 1.7 }); draw(cr, t + .5, .4);
+    txt(p, 'a stone!', 960, 720, t + .6, { size: 56, weight: 700, fill: COL.bad });
+    txt(p, 'a mistake in a program: a bug', 960, 790, m('bug'), { size: 40, fill: COL.dim });
+    txt(p, 'finding and fixing it: debugging', 960, 845, m('bug') + 1.2, { size: 40, fill: COL.dim });
+  }],
+  ['flowchart', 'Flowchart', (m) => {
+    const p = panel(0), L = pgList(p, rowsOf(PROG.seq), { x: 1000, y: 170, w: 520, title: 'Program' });
+    const lg = [['oval', 'start, end', 230, 250], ['rect', 'action', 230, 410], ['dia', 'condition', 230, 600]];
+    const legs = lg.map(([k, s, x, y], i) => { const n = pgNode(p, k, s, x, y, k === 'dia' ? { w: 340, h: 150, size: 40 } : { w: 340, size: 40 }); tw(n.g, { o: k === 'dia' ? .35 : 1 }, .3 + i * .3, .4); return n; });
+    txt(p, 'for branching', 230, 715, 1.2, { size: 38, fill: COL.dim, anchor: 'middle' });
+    const cx = 700, ys = [120, 235, 345, 455, 565, 675], nodes = [];
+    const lab = ['forward', 'forward', 'turn left', 'forward', 'forward'];
+    const start = nd(p, m('map'), 'oval', 'start', cx, ys[0], { w: 260 });
+    lab.forEach((s, i) => { const n = pgNode(p, 'rect', s, 1260, 170 + 18 + i * 66 + 33, { w: 260, h: 60 }); tw(n.g, { x: cx, y: ys[i + 1], o: 1 }, m('map') + .4 + i * .3, .55); nodes.push(n); });
+    nd(p, m('map') + 2, 'oval', 'end', cx, 790, { w: 260 });
+    [start, ...nodes, 0].forEach((_, i, a) => {
+      if (i === a.length - 1) return;
+      const f = [cx, (i === 0 ? ys[0] : ys[i]) + 38], t = [cx, i === a.length - 2 ? 790 - 38 : ys[i + 1] - 40];
+      pgArrow(p, [f, t]).show(m('arrows') + i * .15, .25);
+    });
+    legs.forEach(n => tw(n.g, { o: .35 }, m('map'), .4));
+    tw(L.g, { o: .6 }, m('map') + .6, .4);
+  }],
+
+  /* ===== Part 3. Visual programming ===== */
+  ['visual', 'A program made of blocks', (m) => {
+    const p = panel(0), L = pgList(p, rowsOf(PROG.seq), { x: 80, y: 190, w: 640, size: 46, rowH: 85, title: 'List' });
+    txt(p, 'Scratch (MIT) · Blockly (Google)', 800, 110, m('tools'), { size: 48, weight: 700, fill: PC.cmd, anchor: 'middle' });
+    const bo = { x: 900, y: 190 + 78 + 2, w: 460, h: 80, size: 46 };
+    const B = pgBlocks(p, pgId(pgProg('FFLFF')), { ...bo, o: 0 }); show(B.g, m('list'));
+    [0, 1, 2, 3, 4].forEach(i => { const y = 190 + 78 + 42 + i * 85, l = path(p, `M740 ${y}H885`, { stroke: PC.cmd, 'stroke-width': 6 }, { d: 0 }); draw(l, m('same') + i * .1, .4); });
+    const y2 = bo.y + 2 * 85, cover = pgRect(p, bo.x - 6, y2 - 6, bo.w + 12, bo.h + 12, COL.board, { rx: 0, o: 0 });   // прячет исходный блок, пока копия «оторвана»
+    const f = pgBlocks(p, [{ t: 'L', id: 0 }], { ...bo, y: y2, o: 0 });
+    const t = m('drag');
+    tw(cover, { o: 1 }, t, .05); tw(f.g, { o: 1 }, t, .05);
+    tw(f.g, { x: bo.x + 120, y: y2 - 10, r: -3 }, t, .6, out);
+    tw(f.g, { x: bo.x, y: y2, r: 0 }, t + 1.0, .5, back);
+    tw(cover, { o: 0 }, t + 1.5, .05); tw(f.g, { o: 0 }, t + 1.6, .05);
+  }],
+  ['shapes', 'A block’s shape shows its role', (m) => {
+    const p = panel(0), o = { h: 84, size: 46 }, dy = 90;
+    const ifb = pgBlocks(p, [{ t: 'if', c: 'empty', then: [], id: 0 }], { ...o, x: 420, y: 300 + dy, w: 640, o: 0 });
+    const lp = pgBlocks(p, [{ t: 'rep', n: 3, body: [], id: 0 }], { ...o, x: 1180, y: 300 + dy, w: 380, o: 0 });
+    const cmd = pgBlocks(p, [{ t: 'F', id: 0 }], { ...o, x: 60, y: 440 + dy, w: 300, tabs: true, o: 0 });
+    show(cmd.g, m('cmd')); show(ifb.g, m('hex')); show(lp.g, m('loop'));
+    const caps = [['command', 210, 590 + dy, 'cmd'], ['condition (Scratch): a hexagon', 740, 640 + dy, 'hex'], ['loop: a bracket', 1370, 590 + dy, 'loop']].map(([s, x, y, k]) => txt(p, s, x, y, m(k) + .3, { size: 42, anchor: 'middle', fill: COL.dim }));
+    const t = m('fit');
+    tw(cmd.g, { x: 620, y: 300 + dy }, t, .5);
+    const bad = pgCheckMark(p, 760, 342 + dy, false, { r: 1.8 }); draw(bad, t + .55, .35); hide(bad, t + 1.4, .2);
+    tw(cmd.g, { x: 60, y: 440 + dy }, t + 1.4, .5);
+    const s2 = m('snap');
+    tw(cmd.g, { x: 460, y: 384 + dy }, s2, .6, back);
+    hide(caps[0], s2, .3);
+    const ok = pgCheckMark(p, 1010, 426 + dy, true, { r: 1.8 }); draw(ok, s2 + .6, .35);
+    txt(p, 'blocks stop typing mistakes, not logic mistakes', 800, 200, m('logic'), { size: 42, fill: PC.cond, anchor: 'middle' });
+  }],
+
+  /* ===== Part 4. Loops ===== */
+  partBeat('part4', 'Part 4. Loops', 3),
+  ['repeat', 'A counted loop', (m) => {
+    const p = panel(0), mz = MAZE.rep, F = pgField(p, mz, { x: 60, y: 450, cell: 110 });
+    const L = pgList(p, Array.from({ length: 8 }, () => ({ txt: 'forward', color: PC.cmd })), { x: 1120, y: 150, w: 440, size: 38, rowH: 64, title: 'Program' });
+    const B = pgBlocks(p, pgId([{ t: 'rep', n: 8, body: [{ t: 'F' }] }]), { x: 1120, y: 260, w: 420, o: 0 });
+    const t = m('fold');
+    L.rows.forEach((r, i) => { tw(r.g, { y: L.top, o: 0 }, t + i * .06, .4); });
+    tw(L.g, { o: 0 }, t + .55, .4); show(B.g, t + .55, .4);
+    const c = cnt(p, 1120, 560, 'pass: ', { size: 54, fill: PC.loop }); show(c.e, m('count'));
+    const evs = pgExec(mz, pgId([{ t: 'rep', n: 8, body: [{ t: 'F' }] }])).evs;
+    pgRun(F, evs, m('count'), { per: .33, on: (e, tt) => { if (e.t === 'iter') { c.set(e.n + ' of 8', tt); B.glow(1, tt, .3); } } });
+  }],
+  ['body', 'The loop body', (m) => {
+    const p = panel(0), mz = MAZE.sq, F = pgField(p, mz, { x: 80, y: 200, cell: 170 });
+    const prog = PROG.sq(), B = pgBlocks(p, prog, { x: 720, y: 240, w: 560, o: 0 }); show(B.g, .3);
+    const c = cnt(p, 720, 640, 'pass: ', { size: 60, fill: PC.loop }); show(c.e, .5);
+    const evs = pgExec(mz, prog).evs, cut = evs.findIndex(e => e.t === 'iter' && e.n === 3);
+    const hook = (e, t) => { if (e.t === 'iter') c.set(e.n + ' of 4', t); if (e.t === 'act') B.glow(e.id, t, .45); };
+    pgRun(F, evs, m('run'), { per: .45, to: cut, on: hook });
+    pgRun(F, evs, m('run2'), { per: .45, from: cut, on: hook });
+    pgTrail(F, [[0, 0], [2, 0], [2, 2]], m('run') + .2, 2.4);
+    pgTrail(F, [[2, 2], [0, 2], [0, 0]], m('run2') + .2, 2.4);
+  }],
+  ['repeat-q', 'Question: where will it end up?', (m) => {
+    const p = panel(0), mz = MAZE.rq, F = fieldAt(p, mz);
+    const prog = PROG.rq(), B = pgBlocks(p, prog, { x: 940, y: 190, w: 540 }), ev = pgExec(mz, prog), c = cnt(p, 940, 620, 'cells: ', { size: 60 });
+    txt(p, 'Where will the robot end up?', 940, 790, .4, { size: 46, weight: 700 });
+    show(c.e, .4); let n = 0;
+    const end = pgRun(F, ev.evs, m('answer'), { per: .8, on: (e, t) => { if (e.t === 'act') { B.glow(e.id, t, .5); if (e.c === 'F') c.set(++n, t + .4); } } });
+    show(F.ring(ev.end.x, ev.end.y), end);
+  }],
+  ['while', 'A conditional loop', (m) => {
+    const p = panel(0), mz = MAZE.corr, F = pgField(p, mz, { x: 60, y: 290, cell: 110 });
+    const q = txt(p, '?', 60 + 7 * 110 + 60, 370, .3, { size: 100, weight: 800, fill: COL.dim, anchor: 'middle' });
+    txt(p, 'how many steps to the wall?', 60, 250, .3, { size: 40, fill: COL.dim });
+    const wprog = () => pgId([{ t: 'while', c: 'free', body: [{ t: 'F' }] }]);
+    const prog = wprog(), B = pgBlocks(p, prog, { x: 960, y: 250, w: 460, o: 0 });
+    show(B.g, m('while'));
+    const hx = 960 + B.pos[0].w + 50, ev = pgExec(mz, prog), c = cnt(p, 960, 520, 'steps: ', { size: 56 }); show(c.e, m('while') + .3);
+    let n = 0;
+    pgRun(F, ev.evs, m('stop'), { per: .5, chk: .4, on: (e, t, d) => {
+      if (e.t === 'chk') { const mk_ = pgCheckMark(p, hx, 286, e.go, { r: .9 }); draw(mk_, t, .2); if (e.go) hide(mk_, t + d, .05); B.glow(e.id, t, d); }
+      if (e.t === 'act') c.set(++n, t + .3);
+    } });
+    tw(q, { o: 0 }, m('stop') + 3.4, .3);
+    // врезка: стена вплотную — условие ложно сразу, тело не выполняется ни разу
+    const z = pgField(p, pgMaze(['>']), { x: 60, y: 660, cell: 130, o: 0 }); show(z.g, m('zero'));
+    txt(p, 'wall right in front', 60, 640, m('zero'), { size: 42, fill: COL.dim });
+    const zp = wprog(), Bz = pgBlocks(p, zp, { x: 700, y: 650, w: 460, o: 0 }); show(Bz.g, m('zero') + .2);
+    const zev = pgExec(pgMaze(['>']), zp).evs[0], cz = cnt(p, 230, 745, 'steps: ', { size: 54 }); show(cz.e, m('zero') + .3);
+    Bz.glow(0, m('zero') + 1.4, .5);
+    const bad = pgCheckMark(p, 700 + Bz.pos[0].w + 50, 686, zev.go, { r: 1.2 }); draw(bad, m('zero') + 1.5, .3);
+  }],
+  ['until', 'Repeat until', (m) => {
+    const p = panel(0), B = pgBlocks(p, pgId([{ t: 'until', c: 'flag', head: 'repeat until', body: [{ t: 'F' }] }]), { x: 100, y: 300, w: 820, h: 84, size: 48, o: 0 });
+    show(B.g, m('until'));
+    txt(p, 'Blockly Maze: “repeat until”', 100, 220, .2, { size: 40, fill: COL.dim });
+    txt(p, 'until we reach the finish', 960, 350, m('until') + .5, { size: 42, fill: PC.loop, weight: 700 });
+    const B2 = pgBlocks(p, pgId([{ t: 'while', c: 'nf', body: [{ t: 'F' }] }]), { x: 100, y: 620, w: 820, h: 84, size: 48, o: 0 }); show(B2.g, m('same'));
+    const ar = path(p, 'M300 540V600M282 584L300 604L318 584M282 556L300 536L318 556', { stroke: COL.chalk, 'stroke-width': 7 }, { d: 0 }); draw(ar, m('same'), .5);
+    txt(p, 'the same loop, with “not”', 960, 670, m('same') + .3, { size: 42, fill: PC.loop, weight: 700 });
+    txt(p, 'in Pascal, repeat … until', 960, 780, m('pascal'), { size: 38, fill: COL.dim });
+    txt(p, 'checks after the body', 960, 830, m('pascal') + .2, { size: 38, fill: COL.dim });
+  }],
+  ['forever', 'An infinite loop', (m) => {
+    const p = panel(0), mz = MAZE.room, F = pgField(p, mz, { x: 80, y: 200, cell: 170 });
+    const prog = pgId([{ t: 'while', c: 'free', body: [{ t: 'L' }] }]), B = pgBlocks(p, prog, { x: 720, y: 240, w: 480 }), ev = pgExec(mz, prog, { max: 22, detect: false });
+    const c = cnt(p, 720, 520, 'repeats: ', { size: 60, fill: PC.bad }); show(c.e, .4);
+    pgRun(F, ev.evs, m('spin'), { per: .32, chk: .06, on: (e, t) => { if (e.t === 'iter') { c.set(e.n, t); B.glow(0, t, .3); } } });
+    txt(p, 'infinite loop', 720, 660, m('inf'), { size: 56, weight: 800, fill: COL.bad });
+    txt(p, 'it has to be stopped from outside', 720, 730, m('inf') + .4, { size: 42, fill: COL.dim });
+  }],
+  ['counter', 'Counting in a loop', (m) => {
+    const p = panel(0), mz = MAZE.coins, F = pgField(p, mz, { x: 60, y: 200, cell: 140 });
+    const prog = pgId([{ t: 'rep', n: 6, body: [{ t: 'F' }] }]), B = pgBlocks(p, prog, { x: 1100, y: 190, w: 440 }); show(B.g, .3);
+    txt(p, 'on a coin: coins + 1', 1100, 430, .5, { size: 40, fill: PC.data, weight: 700 });
+    const box = pgBox(p, 'coins', 160, 520); show(box.g, m('walk'));
+    box.put('0', m('walk') + .1);
+    const coins = new Set(mz.coins.map(c => c.x + ',' + c.y)); let n = 0;
+    pgRun(F, pgExec(mz, prog).evs, m('walk') + .8, { per: .9, on: (e, t) => {
+      if (e.t === 'act' && coins.has(e.x + ',' + e.y)) { box.put(String(++n), t + .5); pulse(F.coins[mz.coins.findIndex(c => c.x === e.x && c.y === e.y)], t + .5, 1.5); }
+    } });
+    txt(p, 'a variable: a named box in memory', 500, 640, m('box'), { size: 44, fill: PC.data, weight: 700 });
+  }],
+
+  /* ===== Part 5. Conditions ===== */
+  partBeat('part5', 'Part 5. Conditions', 4),
+  ['branch', 'Condition and if-else', (m) => {
+    const p = panel(0);
+    txt(p, 'A condition is a question with a yes or no answer', 800, 110, .2, { size: 50, weight: 700, anchor: 'middle' });
+    txt(p, 'yes / no = true / false (Boolean values)', 470, 820, m('bool'), { size: 40, fill: PC.cond, anchor: 'middle' });
+    const d = nd(p, m('cond'), 'dia', 'wall\nahead?', 470, 290, { w: 400, h: 210 });
+    const rA = pgNode(p, 'rect', 'turn right', 190, 600, { w: 260 }), rB = pgNode(p, 'rect', 'forward', 750, 600, { w: 260 });
+    const aY = pgArrow(p, [d.left, [190, 290], [190, 556]], { label: 'yes', lx: -50, ly: -18 }), aN = pgArrow(p, [d.right, [750, 290], [750, 556]], { label: 'no', lx: 56, ly: -18 });
+    const yes = m('yes'), no = m('no');
+    aY.show(yes); show(rA.g, yes + .3, .3); pgLight(aY, yes + .3);
+    const FA = pgField(p, pgMaze(['>#', '..']), { x: 1010, y: 190, cell: 150, o: 0 }); show(FA.g, yes);
+    txt(p, 'a wall ahead', 1010, 160, yes, { size: 40, fill: COL.dim });
+    tw(FA.robot, { r: 90 }, yes + .8, .5);
+    aN.show(no); show(rB.g, no + .3, .3); pgLight(aN, no + .3);
+    const FB = pgField(p, pgMaze(['>.', '..']), { x: 1010, y: 560, cell: 150, o: 0 }); show(FB.g, no);
+    txt(p, 'the way is clear', 1010, 540, no, { size: 40, fill: COL.dim });
+    tw(FB.robot, { x: FB.pos(1, 0)[0] }, no + .8, .5);
+  }],
+  ['branch-half', 'An if without else', (m) => {
+    const p = panel(0);
+    txt(p, 'if the card has bonus points, spend them', 800, 100, .2, { size: 46, weight: 700, anchor: 'middle' });
+    const d = nd(p, .3, 'dia', 'card has\nbonus points?', 700, 280, { w: 460, h: 200, size: 36 });
+    const r = nd(p, .5, 'rect', 'spend the points', 700, 560, { w: 360 }); nd(p, .7, 'oval', 'pay the rest', 700, 770, { w: 300 });
+    pgArrow(p, [d.bot, [700, 522]], { label: 'yes', lx: 44, ly: 40 }).show(.4);
+    pgArrow(p, [[700, 598], [700, 730]]).show(.6);
+    const a = pgArrow(p, [d.right, [1200, 280], [1200, 770], [852, 770]], { label: 'no', lx: 50, ly: -18 });
+    a.show(m('skip'), .9); pgLight(a, m('skip') + .9);
+  }],
+  ['atm', 'Nested branching', (m) => {
+    const p = panel(0);
+    const A = pgNode(p, 'dia', 'PIN\ncorrect?', 400, 230, { w: 400, h: 190 }), Bd = pgNode(p, 'dia', 'amount ≤\nbalance?', 400, 520, { w: 400, h: 190 });
+    const err = pgNode(p, 'rect', 'wrong PIN', 1000, 230, { w: 360, fill: COL.bad }), ok = pgNode(p, 'rect', 'give out cash', 400, 790, { w: 360 }), no = pgNode(p, 'rect', 'not enough money', 1030, 520, { w: 560, fill: COL.bad });
+    const aE = pgArrow(p, [A.right, [820, 230]], { label: 'no', lx: 50, ly: -18 }), aY = pgArrow(p, [A.bot, [400, 422]], { label: 'yes', lx: 44, ly: 40 });
+    const bY = pgArrow(p, [Bd.bot, [400, 748]], { label: 'yes', lx: 44, ly: 40 }), bN = pgArrow(p, [Bd.right, [748, 520]], { label: 'no', lx: 50, ly: -18 });
+    const to = m('outer'); show(A.g, to, .35); aE.show(to + .3); show(err.g, to + .5, .3);
+    const ti = m('inner'); aY.show(ti); show(Bd.g, ti + .3, .35); bY.show(ti + .6); bN.show(ti + .6); show(ok.g, ti + .85, .3); show(no.g, ti + .85, .3);
+    txt(p, 'balance: 5000', 1300, 100, m('run1'), { size: 48, fill: PC.data, weight: 700, anchor: 'middle' });
+    const s1 = txt(p, 'withdraw: 3000', 1300, 170, m('run1') + .3, { size: 48, fill: PC.data, weight: 700, anchor: 'middle' });
+    txt(p, 'withdraw: 7000', 1300, 170, m('run2'), { size: 48, fill: PC.data, weight: 700, anchor: 'middle' }); hide(s1, m('run2'), .2);
+    const t1 = m('run1') + .8; pgNodeLight(A, t1); pgLight(aY, t1 + .3); pgNodeLight(Bd, t1 + .7); pgLight(bY, t1 + 1); pgNodeLight(ok, t1 + 1.4);
+    const t2 = m('run2'); [aY, bY].forEach(a => tw(a.line, { c_stroke: COL.chalk, 'a_stroke-width': 6 }, t2, .2));
+    pgLight(aY, t2 + .5); pgNodeLight(Bd, t2 + .9); pgLight(bN, t2 + 1.3); pgNodeLight(no, t2 + 1.7);
+  }],
+  ['chain', 'A chain of conditions', (m) => {
+    const p = panel(0), lg = G(p, { x: 230, y: 180, o: 0 });
+    mk('rect', { width: 190, height: 500, rx: 40, fill: PC.ink, stroke: COL.chalk, 'stroke-width': 6 }, lg);
+    const cols = [COL.bad, COL.int, COL.good];
+    cols.forEach((c, i) => mk('circle', { cx: 95, cy: 95 + i * 155, r: 58, fill: c, opacity: .2 }, lg));
+    const lit = cols.map((c, i) => { const e = G(lg, { o: 0 }); mk('circle', { cx: 95, cy: 95 + i * 155, r: 58, fill: c }, e); return e; });
+    show(lg, .2);
+    const d1 = nd(p, .3, 'dia', 'red?', 850, 230, { w: 360, h: 170 }), d2 = nd(p, .4, 'dia', 'yellow?', 850, 470, { w: 360, h: 170 });
+    const s = nd(p, .5, 'rect', 'stop', 1330, 230, { w: 260 }), w = nd(p, .55, 'rect', 'wait', 1330, 470, { w: 260 }), g = nd(p, .6, 'rect', 'go', 850, 720, { w: 260 });
+    const a = [pgArrow(p, [d1.right, [1196, 230]], { label: 'yes', lx: 44, ly: -18 }), pgArrow(p, [d1.bot, [850, 385]], { label: 'no', lx: 50, ly: 40 }),
+      pgArrow(p, [d2.right, [1196, 470]], { label: 'yes', lx: 44, ly: -18 }), pgArrow(p, [d2.bot, [850, 682]], { label: 'no', lx: 50, ly: 40 })];
+    a.forEach((x, i) => x.show(.5 + i * .1, .3));
+    const clear = t => { a.forEach(x => tw(x.line, { c_stroke: COL.chalk, 'a_stroke-width': 6 }, t, .15)); lit.forEach(l => tw(l, { o: 0 }, t, .15)); };
+    const run = (t, k, path_, ns) => { clear(t); tw(lit[k], { o: 1 }, t + .15, .2); path_.forEach((x, i) => pgLight(a[x], t + .3 + i * .2)); ns.forEach((n, i) => pgNodeLight(n, t + .3 + i * .25)); };
+    run(m('red'), 0, [0], [d1, s]); run(m('yellow'), 1, [1, 2], [d1, d2, w]); run(m('green'), 2, [1, 3], [d1, d2, g]);
+  }],
+  ['grades', 'The order of a chain', (m) => {
+    const p = panel(0);
+    txt(p, 'A grading rule', 100, 110, .2, { size: 60, weight: 800 });
+    const sc = pgPill(p, 'score: 95', 1300, 95, PC.data, PC.ink, { size: 48, h: 84, pad: 34 }); show(sc, m('score'));
+    const L = [['score ≥ 90 → A', PC.cond], ['score ≥ 75 → B', PC.cond], ['otherwise → C', PC.meta]], R = [L[1], L[0], L[2]];
+    txt(p, 'more specific first', 100, 230, m('rule'), { size: 40, fill: COL.dim });
+    const left = L.map(([s, c], i) => ruleRow(p, s, 100, 270 + i * 120, 620, c));
+    left.forEach((r, i) => show(r.g, m('rule') + .3 + i * .5));
+    txt(p, 'the other way round', 880, 230, m('bad'), { size: 40, fill: COL.dim });
+    const right = R.map(([s, c], i) => ruleRow(p, s, 880, 270 + i * 120, 620, c));
+    right.forEach((r, i) => show(r.g, m('bad') + i * .3));
+    show(left[0].hl, m('good') + .5, .3);
+    const gA = pgPill(p, 'A ✓', 410, 700, COL.good, PC.ink, { size: 56, h: 96, pad: 40 }); show(gA, m('good') + 1);
+    show(right[0].hl, m('bad') + 1.2, .3);
+    const gB = pgPill(p, 'B ✗', 1190, 700, COL.bad, PC.ink, { size: 56, h: 96, pad: 40 }); show(gB, m('bad') + 1.7);
+  }],
+  ['branch-q', 'Question: what will the robot do?', (m) => {
+    const p = panel(0), mz = MAZE.bq, F = fieldAt(p, mz, { coords: false, y: 270 });
+    const prog = pgId([{ t: 'if', c: 'wall', then: [{ t: 'L' }], else: [{ t: 'F' }] }, { t: 'F' }]), B = pgBlocks(p, prog, { x: 830, y: 280, w: 560 }), ev = pgExec(mz, prog);
+    txt(p, 'Where will the robot end up?', 830, 800, .4, { size: 46, weight: 700 });
+    const end = pgRun(F, ev.evs, m('answer'), { per: 1.4, chk: 1.4, on: (e, t, d) => B.glow(e.id, t, d) });
+    show(F.ring(ev.end.x, ev.end.y), end);
+  }],
+
+  /* ===== Part 6. All together ===== */
+  ['combo', 'The maze: all together', (m) => {
+    const p = panel(0), mz = MAZE.combo, F = fieldAt(p, mz, { coords: false });
+    const prog = PROG.combo(), B = pgBlocks(p, prog, { x: 940, y: 190, w: 620, o: 0 }), ev = pgExec(mz, prog).evs;
+    show(B.g, m('prog'));
+    const hook = (e, t, d) => { if (e.t !== 'iter') B.glow(e.id, t, Math.max(d, .2) + .1); };
+    const c1 = pgCut(ev, 5), c2 = pgCut(ev, 9), c3 = pgCut(ev, 13), opt = { per: .3, chk: .15, on: hook };
+    pgRun(F, ev, m('leg1'), { ...opt, to: c1 });
+    pgRun(F, ev, m('leg2'), { ...opt, from: c1, to: c2 });
+    pgRun(F, ev, m('leg3'), { ...opt, from: c2, to: c3 });
+    const end = pgRun(F, ev, m('leg4'), { ...opt, from: c3 });
+    pulse(F.flag, end + .1, 1.5); show(F.ring(mz.flag.x, mz.flag.y), end);
+  }],
+  ['combo-fail', 'A rule that fails', (m) => {
+    const p = panel(0), mz = MAZE.fail, F = fieldAt(p, mz, { coords: false, y: 270 });
+    const prog = PROG.combo(), B = pgBlocks(p, prog, { x: 860, y: 260, w: 620 }), ev = pgExec(mz, prog, { detect: false, max: 400 }).evs.filter(e => e.t === 'act');
+    const lap = 16, cut = pgCut(ev, lap), end2 = pgCut(ev, 2 * lap);
+    pgRun(F, ev, m('loop'), { per: .25, chk: 0, to: cut });
+    const t2 = pgRun(F, ev, m('again'), { per: .17, chk: 0, from: cut, to: end2 });
+    pgTrail(F, [[0, 0], [4, 0], [4, 2], [0, 2]], t2 - 1.0, .9, { color: COL.bad, width: 14, o: .85, closed: true });
+    txt(p, 'it never reaches the flag', 860, 770, t2 - .6, { size: 50, weight: 700, fill: COL.bad });
+  }],
+
+  /* ===== Part 7. Summary ===== */
+  ['to-text', 'From blocks to text', (m) => {
+    const p = panel(0), prog = PROG.combo(), B = pgBlocks(p, prog, { x: 70, y: 200, w: 560, o: 0 }); show(B.g, .3);
+    const pan = G(p, { o: 0 }); mk('rect', { x: 740, y: 160, width: 800, height: 430, rx: 26, fill: PC.card, stroke: PC.edge, 'stroke-width': 5 }, pan); show(pan, m('map'), .3);
+    ctx2d.font = `44px ${PG_MONO}`; const cw = ctx2d.measureText('0').width;
+    const lines = [['while not at_flag():', 0, PC.loop, 0], ['if path_ahead():', 1, PC.cond, 1], ['forward()', 2, PC.cmd, 2], ['else:', 1, PC.cond, 1], ['turn_right()', 2, PC.cmd, 3]];
+    lines.forEach(([s, ind, col, id], i) => {
+      const y = 245 + i * 72, e = T(p, s, { x: 780 + ind * 4 * cw, y, size: 44, font: PG_MONO, weight: 700, fill: COL.chalk, o: 0 });
+      show(e, m('map') + i * .6, .3); tw(e, { c_fill: col }, m('map') + i * .6, .3); B.glow(id, m('map') + i * .6, .6);
+    });
+    const bar = (ind, a, b, col) => { const r = G(p, { o: 0 }); mk('rect', { x: 770 + ind * 4 * cw - 2, y: 245 + a * 72 - 44, width: 12, height: (b - a) * 72 + 62, rx: 5, fill: col }, r); return r; };
+    [bar(0, 1, 4, PC.loop), bar(1, 2, 2, PC.cond), bar(1, 4, 4, PC.cond)].forEach((r, i) => show(r, m('indent') + i * .6));
+    txt(p, 'the function names are made up', 740, 660, m('made'), { size: 40, fill: COL.dim });
+  }],
+  ['wrap', 'Summary', (m) => {
+    const p = panel(0);
+    txt(p, 'Summary', 100, 120, .2, { size: 68, weight: 800 });
+    [['Algorithm', 'precise steps that solve a problem', 'w1', COL.chalk],
+      ['Sequence', 'commands one after another', 'w2', PC.cmd],
+      ['Loop', 'N times, or while a condition holds', 'w3', PC.loop],
+      ['Condition', 'a yes or no question that chooses', 'w4', PC.cond],
+      ['Tracing', 'the computer does what is written', 'w5', PC.meta]].forEach(([a, b, mark, col], i) => {
+      const g = G(p, { y: 270 + i * 130, o: 0 });
+      T(g, a, { x: 100, size: 52, weight: 800, fill: col }); T(g, b, { x: 620, size: 46, fill: COL.dim });
+      show(g, m(mark));
+    });
+  }],
+  ['next', 'Next lesson', (m) => {
+    const p = panel(0);
+    txt(p, 'Lesson 2: Python', 100, 200, .2, { size: 76, weight: 800 });
+    txt(p, 'values, variables, numbers, strings, input and output', 100, 290, .4, { size: 46, fill: COL.dim });
+    const bx = (s, x, col, t) => { const b = pgRect(p, x - 190, 470, 380, 130, col, { o: 0 }); T(b, s, { x: 190, y: 82, size: 56, fill: PC.ink, weight: 800, anchor: 'middle' }); tw(b, { o: 1 }, t, .4); return b; };
+    bx('input', 300, PC.meta, m('io')); bx('processing', 800, PC.cmd, m('io') + .6); bx('output', 1300, PC.meta, m('io') + 1.2);
+    pgArrow(p, [[500, 535], [590, 535]]).show(m('io') + .4, .3); pgArrow(p, [[1000, 535], [1090, 535]]).show(m('io') + 1, .3);
+    const v = pgRect(p, 600, 700, 400, 120, PC.card, { stroke: PC.data, sw: 7, o: 0 }); T(v, 'coins: 4', { x: 200, y: 78, size: 54, fill: PC.data, weight: 800, anchor: 'middle' }); show(v, m('box'));
+  }],
+].map(([id, title, run, extra]) => ({ id, title, run, lead: false, ...extra }));   // lead:false — все биты открываются сразу, ничего не сдвигать к началу
+
+boot();
+</script>
+</body>
+</html>
